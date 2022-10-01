@@ -1,6 +1,6 @@
 # go-batcher  [![Build Status][ci-img]][ci] [![Coverage Status][cov-img]][cov]
 
-High performance, easy to use batcher written in Go.
+High performance, easy to use batcher written in Go with generics™.
 
 ## Installation
 
