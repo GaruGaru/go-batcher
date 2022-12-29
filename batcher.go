@@ -19,13 +19,10 @@ type Batcher[I any] struct {
 	emitRule EmitRule
 	// channel used to dispatch batches to workers for processing
 	batchCh chan []I
-	// channel used to dispatch items to batch
-	itemsCh chan []I
 	// func used for terminations
 	cancelFn func()
 	//
-	workersGroup    *errgroup.Group
-	accumulateGroup *errgroup.Group
+	workersGroup *errgroup.Group
 }
 
 // NewBatcher returns a new batcher given a list of Opt
@@ -61,7 +58,6 @@ func NewBatcher[I any](opts ...Opt[I]) *Batcher[I] {
 		workersCount: opt.workers,
 		emitRule:     opt.emitRule,
 		batchCh:      make(chan []I, opt.workers),
-		itemsCh:      make(chan []I, opt.workers),
 	}
 }
 
@@ -75,25 +71,21 @@ func (b *Batcher[I]) Start(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	b.cancelFn = cancel
 
-	accumulatorGroup, ctx := errgroup.WithContext(ctx)
 	workersGroup, ctx := errgroup.WithContext(ctx)
-
-	accumulatorGroup.Go(func() error {
-		err := b.accumulateBatchWorker(ctx)
-		ctx, _ := context.WithTimeout(ctx, 1000*time.Millisecond)
-		b.emitIfNeeded(ctx)
-		close(b.batchCh)
-		return err
-	})
 
 	workersGroup.Go(func() error {
 		for {
 			select {
 			case <-ctx.Done():
+				ctx, cancel := context.WithTimeout(ctx, 1000*time.Millisecond)
+				b.Emit(ctx)
+				cancel()
+				close(b.batchCh)
 				return nil
 			default:
-				ctx, _ := context.WithTimeout(ctx, 1000*time.Millisecond)
+				ctx, cancel := context.WithTimeout(ctx, 1000*time.Millisecond)
 				b.Emit(ctx)
+				cancel()
 			}
 		}
 	})
@@ -104,25 +96,11 @@ func (b *Batcher[I]) Start(ctx context.Context) {
 		})
 	}
 
-	b.accumulateGroup = accumulatorGroup
 	b.workersGroup = workersGroup
 }
 
 func (b *Batcher[I]) accumulateBatchWorker(ctx context.Context) error {
-	for {
-		select {
-		case it, hasItems := <-b.itemsCh:
-			if !hasItems {
-				continue
-			}
-			b.batch.Push(it...)
-		case <-ctx.Done():
-			for it := range b.itemsCh {
-				b.batch.Push(it...)
-			}
-			return nil
-		}
-	}
+	return nil
 }
 
 func (b *Batcher[I]) processBatchWorker(ctx context.Context) error {
@@ -161,11 +139,7 @@ func (b *Batcher[I]) Emit(ctx context.Context) {
 }
 
 func (b *Batcher[I]) Wait() error {
-	err := b.accumulateGroup.Wait()
-	if err != nil {
-		return err
-	}
-	err = b.workersGroup.Wait()
+	err := b.workersGroup.Wait()
 	if err != nil {
 		return err
 	}
@@ -173,6 +147,5 @@ func (b *Batcher[I]) Wait() error {
 }
 
 func (b *Batcher[I]) Terminate() {
-	close(b.itemsCh)
 	b.cancelFn()
 }

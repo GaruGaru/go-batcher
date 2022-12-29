@@ -41,7 +41,7 @@ func TestBatcher_Emit(t *testing.T) {
 }
 
 func BenchmarkNewBatcher(b *testing.B) {
-	var itemsCount = 123
+	var itemsCount = 10000
 	tp := newTestableProcessFn[int]()
 
 	for i := 0; i < b.N; i++ {
@@ -49,8 +49,8 @@ func BenchmarkNewBatcher(b *testing.B) {
 			Process(tp.process),
 			MaxSize[int](itemsCount),
 			Emit[int](
-				OnSizeReached(3),
-				Every(10*time.Millisecond),
+				OnSizeReached(100),
+				Every(100*time.Millisecond),
 			),
 		)
 
