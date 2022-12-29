@@ -11,8 +11,9 @@ import (
 
 func TestBlockingQueueConcurrency_PopAll_Empty(t *testing.T) {
 	bq := NewBlockingQueue[string](1)
-	ctx, _ := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	bq.PopAll(ctx)
+	cancel()
 }
 
 func TestBlockingQueueConcurrency_Push_PopAll(t *testing.T) {
@@ -51,7 +52,7 @@ func TestBlockingQueueConcurrency_WithConcurrency(t *testing.T) {
 	for i := 0; i < consumers; i++ {
 		consGroup.Go(func() error {
 			for publishing || bq.Size() > 0 {
-				ctx, _ := context.WithTimeout(context.Background(), 200*time.Millisecond)
+				ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 				items := bq.PopAll(ctx)
 				if items == nil {
 					continue
@@ -59,6 +60,7 @@ func TestBlockingQueueConcurrency_WithConcurrency(t *testing.T) {
 				cLock.Lock()
 				popped = append(popped, items...)
 				cLock.Unlock()
+				cancel()
 			}
 
 			return nil
@@ -78,8 +80,9 @@ func TestPopAll_Full(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		bq.Push(i)
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	bq.PopAll(ctx)
+	cancel()
 }
 
 func BenchmarkBlockingQueue(b *testing.B) {

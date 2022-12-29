@@ -84,7 +84,7 @@ func (b *Batcher[I]) Start(ctx context.Context) {
 				return nil
 			default:
 				ctx, cancel := context.WithTimeout(ctx, 1000*time.Millisecond)
-				b.Emit(ctx)
+				b.emitIfNeeded(ctx)
 				cancel()
 			}
 		}
@@ -97,10 +97,6 @@ func (b *Batcher[I]) Start(ctx context.Context) {
 	}
 
 	b.workersGroup = workersGroup
-}
-
-func (b *Batcher[I]) accumulateBatchWorker(ctx context.Context) error {
-	return nil
 }
 
 func (b *Batcher[I]) processBatchWorker(ctx context.Context) error {
