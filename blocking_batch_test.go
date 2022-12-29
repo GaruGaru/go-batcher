@@ -6,17 +6,19 @@ import (
 	"golang.org/x/sync/errgroup"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestBlockingQueueConcurrency_PopAll_Empty(t *testing.T) {
 	bq := NewBlockingQueue[string](1)
-	bq.PopAll()
+	ctx, _ := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	bq.PopAll(ctx)
 }
 
 func TestBlockingQueueConcurrency_Push_PopAll(t *testing.T) {
 	bq := NewBlockingQueue[string](1)
 	bq.Push("a")
-	items := bq.PopAll()
+	items := bq.PopAll(context.TODO())
 	require.Equal(t, []string{"a"}, items)
 }
 
@@ -50,7 +52,7 @@ func TestBlockingQueueConcurrency_WithConcurrency(t *testing.T) {
 		consGroup.Go(func() error {
 
 			for publishing || bq.Size() > 0 {
-				items := bq.PopAll()
+				items := bq.PopAll(context.TODO())
 				if items == nil {
 					continue
 				}
@@ -78,6 +80,6 @@ func BenchmarkBlockingQueue(b *testing.B) {
 		for i := 0; i < 100; i++ {
 			bq.Push(i)
 		}
-		bq.PopAll()
+		bq.PopAll(context.TODO())
 	}
 }

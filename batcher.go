@@ -161,7 +161,7 @@ func (b *Batcher[I]) emitIfNeeded() {
 
 // Emit force emission of the current batch without evaluating the EmitRule
 func (b *Batcher[I]) Emit() {
-	batch := b.batch.PopAll()
+	batch := b.batch.PopAll(context.TODO())
 	if len(batch) != 0 {
 		b.batchCh <- batch
 	}
