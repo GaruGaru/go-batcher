@@ -26,7 +26,6 @@ type Batcher[I any] struct {
 	//
 	workersGroup    *errgroup.Group
 	accumulateGroup *errgroup.Group
-	dispatcherGroup *errgroup.Group
 }
 
 // NewBatcher returns a new batcher given a list of Opt
@@ -77,18 +76,26 @@ func (b *Batcher[I]) Start(ctx context.Context) {
 	b.cancelFn = cancel
 
 	accumulatorGroup, ctx := errgroup.WithContext(ctx)
-	dispatcherGroup, ctx := errgroup.WithContext(ctx)
 	workersGroup, ctx := errgroup.WithContext(ctx)
-
-	dispatcherGroup.Go(func() error {
-		return b.dispatchWorker(ctx, 100*time.Millisecond)
-	})
 
 	accumulatorGroup.Go(func() error {
 		err := b.accumulateBatchWorker(ctx)
-		b.Emit()
+		ctx, _ := context.WithTimeout(ctx, 1000*time.Millisecond)
+		b.emitIfNeeded(ctx)
 		close(b.batchCh)
 		return err
+	})
+
+	workersGroup.Go(func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			default:
+				ctx, _ := context.WithTimeout(ctx, 1000*time.Millisecond)
+				b.Emit(ctx)
+			}
+		}
 	})
 
 	for i := 0; i < b.workersCount; i++ {
@@ -99,20 +106,6 @@ func (b *Batcher[I]) Start(ctx context.Context) {
 
 	b.accumulateGroup = accumulatorGroup
 	b.workersGroup = workersGroup
-	b.dispatcherGroup = dispatcherGroup
-}
-
-func (b *Batcher[I]) dispatchWorker(ctx context.Context, checkDelay time.Duration) error {
-	tk := time.NewTicker(checkDelay)
-	for {
-		select {
-		case <-tk.C:
-			b.emitIfNeeded()
-		case <-ctx.Done():
-			tk.Stop()
-			return nil
-		}
-	}
 }
 
 func (b *Batcher[I]) accumulateBatchWorker(ctx context.Context) error {
@@ -152,16 +145,16 @@ func (b *Batcher[I]) processBatchWorker(ctx context.Context) error {
 	}
 }
 
-func (b *Batcher[I]) emitIfNeeded() {
+func (b *Batcher[I]) emitIfNeeded(ctx context.Context) {
 	b.stats.size = b.batch.Size()
 	if b.emitRule.Check(*b.stats) {
-		b.Emit()
+		b.Emit(ctx)
 	}
 }
 
 // Emit force emission of the current batch without evaluating the EmitRule
-func (b *Batcher[I]) Emit() {
-	batch := b.batch.PopAll(context.TODO())
+func (b *Batcher[I]) Emit(ctx context.Context) {
+	batch := b.batch.PopAll(ctx)
 	if len(batch) != 0 {
 		b.batchCh <- batch
 	}
@@ -173,10 +166,6 @@ func (b *Batcher[I]) Wait() error {
 		return err
 	}
 	err = b.workersGroup.Wait()
-	if err != nil {
-		return err
-	}
-	err = b.dispatcherGroup.Wait()
 	if err != nil {
 		return err
 	}

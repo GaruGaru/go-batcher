@@ -50,9 +50,9 @@ func TestBlockingQueueConcurrency_WithConcurrency(t *testing.T) {
 	cLock := &sync.Mutex{}
 	for i := 0; i < consumers; i++ {
 		consGroup.Go(func() error {
-
 			for publishing || bq.Size() > 0 {
-				items := bq.PopAll(context.TODO())
+				ctx, _ := context.WithTimeout(context.Background(), 200*time.Millisecond)
+				items := bq.PopAll(ctx)
 				if items == nil {
 					continue
 				}
@@ -73,11 +73,20 @@ func TestBlockingQueueConcurrency_WithConcurrency(t *testing.T) {
 	require.Equal(t, 0, bq.Size())
 }
 
+func TestPopAll_Full(t *testing.T) {
+	bq := NewBlockingQueue[int](123)
+	for i := 0; i < 100; i++ {
+		bq.Push(i)
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
+	bq.PopAll(ctx)
+}
+
 func BenchmarkBlockingQueue(b *testing.B) {
 	bq := NewBlockingQueue[int](123)
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		for i := 0; i < 100; i++ {
+		for i := 0; i < 123; i++ {
 			bq.Push(i)
 		}
 		bq.PopAll(context.TODO())
