@@ -1,6 +1,8 @@
 package batcher
 
 import (
+	"context"
+	"github.com/garugaru/go-batcher/cond"
 	"sync"
 )
 
@@ -9,34 +11,38 @@ type BlockingBatch[I any] struct {
 	items   []I
 	index   int
 	maxSize int
-	full    *sync.Cond
+	full    *cond.Cond
+	l       *sync.Mutex
 }
 
 func NewBlockingQueue[I any](size int) *BlockingBatch[I] {
 	return &BlockingBatch[I]{
 		items:   make([]I, size),
 		maxSize: size,
-		full:    sync.NewCond(&sync.Mutex{}),
+		full:    cond.New(),
+		l:       &sync.Mutex{},
 	}
 }
 
 func (q *BlockingBatch[I]) Push(items ...I) {
-	q.full.L.Lock()
+	q.l.Lock()
 	for _, it := range items {
 		// blocks if the max size has been reached
 		for q.index == q.maxSize {
-			q.full.Wait()
+			q.l.Unlock()
+			q.full.Wait(context.TODO())
+			q.l.Lock()
 		}
 		q.items[q.index] = it
 		q.index++
 	}
-	q.full.L.Unlock()
+	q.l.Unlock()
 }
 
 // PopAll Pops all the current items in the queue.
 func (q *BlockingBatch[I]) PopAll() []I {
-	q.full.L.Lock()
-	defer q.full.L.Unlock()
+	q.l.Lock()
+	defer q.l.Unlock()
 	cpy := make([]I, q.index)
 	copy(cpy, q.items)
 	q.index = 0

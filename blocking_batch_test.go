@@ -48,6 +48,7 @@ func TestBlockingQueueConcurrency_WithConcurrency(t *testing.T) {
 	cLock := &sync.Mutex{}
 	for i := 0; i < consumers; i++ {
 		consGroup.Go(func() error {
+
 			for publishing || bq.Size() > 0 {
 				items := bq.PopAll()
 				if items == nil {
@@ -57,6 +58,7 @@ func TestBlockingQueueConcurrency_WithConcurrency(t *testing.T) {
 				popped = append(popped, items...)
 				cLock.Unlock()
 			}
+
 			return nil
 		})
 	}
