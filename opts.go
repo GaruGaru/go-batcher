@@ -14,7 +14,7 @@ type Opt[I any] interface {
 
 func Emit[I any](rules ...EmitRule) EmitRuleOpt[I] {
 	return EmitRuleOpt[I]{
-		rule: MultiEmitRule{Rules: rules},
+		rule: NewMultiEmitRule(rules),
 	}
 }
 

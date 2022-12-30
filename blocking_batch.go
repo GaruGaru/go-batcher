@@ -39,7 +39,9 @@ func (q *BlockingBatch[I]) Push(items ...I) {
 		}
 		q.items[q.index] = it
 		q.index++
-		q.empty.Signal()
+		if q.index >= q.maxSize {
+			q.empty.Signal()
+		}
 	}
 	q.fl.Unlock()
 }
@@ -47,7 +49,6 @@ func (q *BlockingBatch[I]) Push(items ...I) {
 // PopAll Pops all the current items in the queue.
 func (q *BlockingBatch[I]) PopAll(ctx context.Context) []I {
 	q.waitFull(ctx)
-
 	q.fl.Lock()
 	defer q.fl.Unlock()
 	cpy := make([]I, q.index)
