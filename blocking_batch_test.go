@@ -55,6 +55,7 @@ func TestBlockingQueueConcurrency_WithConcurrency(t *testing.T) {
 				ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 				items := bq.PopAll(ctx)
 				if items == nil {
+					cancel()
 					continue
 				}
 				cLock.Lock()
