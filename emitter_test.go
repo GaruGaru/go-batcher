@@ -12,14 +12,11 @@ func TestEmitter_MultiRule(t *testing.T) {
 		Every(10 * time.Second),
 	})
 
-	go func() {
-		select {
-		case <-time.After(100 * time.Millisecond):
-			rule.Check(BatchStats{
-				size: 13,
-			})
-		}
-	}()
+	time.AfterFunc(100*time.Millisecond, func() {
+		rule.Check(BatchStats{
+			size: 13,
+		})
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1000*time.Millisecond)
 	defer cancel()
