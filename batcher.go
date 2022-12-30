@@ -23,6 +23,8 @@ type Batcher[I any] struct {
 	cancelFn func()
 	//
 	workersGroup *errgroup.Group
+
+	allowEmit bool
 }
 
 // NewBatcher returns a new batcher given a list of Opt
@@ -64,6 +66,17 @@ func NewBatcher[I any](opts ...Opt[I]) *Batcher[I] {
 // Accumulate N items, can block if the workers can't keep up with the processing
 func (b *Batcher[I]) Accumulate(items ...I) {
 	b.batch.Push(items...)
+
+	// trigger emission checks after publishing
+	// all checks must be non-blocking
+	if b.allowEmit {
+		b.emitIfNeeded()
+	}
+}
+
+func (b *Batcher[I]) emitIfNeeded() {
+	b.stats.size = b.batch.Size()
+	b.emitRule.Check(*b.stats)
 }
 
 // Start initialize batcher and launch goroutines, blocks until Terminate is called or a non-recoverable error occurs
@@ -77,15 +90,18 @@ func (b *Batcher[I]) Start(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
-				ctx, cancel := context.WithTimeout(ctx, 1000*time.Millisecond)
+				ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 				b.Emit(ctx)
 				cancel()
 				close(b.batchCh)
 				return nil
-			default:
-				ctx, cancel := context.WithTimeout(ctx, 1000*time.Millisecond)
-				b.emitIfNeeded(ctx)
+			case <-b.emitRule.Emit():
+				b.allowEmit = false
+				ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+				b.Emit(ctx)
 				cancel()
+				b.emitIfNeeded()
+				b.allowEmit = true
 			}
 		}
 	})
@@ -119,13 +135,6 @@ func (b *Batcher[I]) processBatchWorker(ctx context.Context) error {
 	}
 }
 
-func (b *Batcher[I]) emitIfNeeded(ctx context.Context) {
-	b.stats.size = b.batch.Size()
-	if b.emitRule.Check(*b.stats) {
-		b.Emit(ctx)
-	}
-}
-
 // Emit force emission of the current batch without evaluating the EmitRule
 func (b *Batcher[I]) Emit(ctx context.Context) {
 	batch := b.batch.PopAll(ctx)
@@ -144,4 +153,5 @@ func (b *Batcher[I]) Wait() error {
 
 func (b *Batcher[I]) Terminate() {
 	b.cancelFn()
+	b.emitRule.Close()
 }

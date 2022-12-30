@@ -96,3 +96,53 @@ func BenchmarkBlockingQueue(b *testing.B) {
 		bq.PopAll(context.TODO())
 	}
 }
+
+func BenchmarkBlockingQueue_Concurrently(b *testing.B) {
+	var (
+		publishers = 321
+		consumers  = 123
+		items      = 2234
+		queueSize  = 33
+	)
+
+	bq := NewBlockingQueue[int](queueSize)
+
+	ctx := context.Background()
+	pubGroup, ctx := errgroup.WithContext(ctx)
+	consGroup, _ := errgroup.WithContext(ctx)
+
+	var publishing = true
+	for i := 0; i < publishers; i++ {
+		pubGroup.Go(func() error {
+			for i := 0; i < items; i++ {
+				bq.Push(i)
+			}
+			return nil
+		})
+	}
+
+	popped := make([]int, 0)
+	cLock := &sync.Mutex{}
+	for i := 0; i < consumers; i++ {
+		consGroup.Go(func() error {
+			for publishing || bq.Size() > 0 {
+				ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+				items := bq.PopAll(ctx)
+				if items == nil {
+					cancel()
+					continue
+				}
+				cLock.Lock()
+				popped = append(popped, items...)
+				cLock.Unlock()
+				cancel()
+			}
+
+			return nil
+		})
+	}
+
+	require.NoError(b, pubGroup.Wait())
+	publishing = false
+	require.NoError(b, consGroup.Wait())
+}
