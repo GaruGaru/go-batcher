@@ -12,7 +12,9 @@ type BlockingBatch[I any] struct {
 	index   int
 	maxSize int
 	full    *cond.Cond
-	l       *sync.Mutex
+	empty   *cond.Cond
+	fl      *sync.Mutex
+	el      *sync.Mutex
 }
 
 func NewBlockingQueue[I any](size int) *BlockingBatch[I] {
@@ -20,34 +22,58 @@ func NewBlockingQueue[I any](size int) *BlockingBatch[I] {
 		items:   make([]I, size),
 		maxSize: size,
 		full:    cond.New(),
-		l:       &sync.Mutex{},
+		empty:   cond.New(),
+		fl:      &sync.Mutex{},
+		el:      &sync.Mutex{},
 	}
 }
 
 func (q *BlockingBatch[I]) Push(items ...I) {
-	q.l.Lock()
+	q.fl.Lock()
 	for _, it := range items {
 		// blocks if the max size has been reached
 		for q.index == q.maxSize {
-			q.l.Unlock()
+			q.fl.Unlock()
 			q.full.Wait(context.TODO())
-			q.l.Lock()
+			q.fl.Lock()
 		}
 		q.items[q.index] = it
 		q.index++
+		q.empty.Signal()
 	}
-	q.l.Unlock()
+	q.fl.Unlock()
 }
 
 // PopAll Pops all the current items in the queue.
-func (q *BlockingBatch[I]) PopAll() []I {
-	q.l.Lock()
-	defer q.l.Unlock()
+func (q *BlockingBatch[I]) PopAll(ctx context.Context) []I {
+	q.waitFull(ctx)
+
+	q.fl.Lock()
+	defer q.fl.Unlock()
 	cpy := make([]I, q.index)
 	copy(cpy, q.items)
 	q.index = 0
 	q.full.Signal()
 	return cpy
+}
+
+func (q *BlockingBatch[I]) waitFull(ctx context.Context) {
+	q.el.Lock()
+	defer q.el.Unlock()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			if q.index < q.maxSize {
+				q.el.Unlock()
+				q.empty.Wait(ctx)
+				q.el.Lock()
+			} else {
+				return
+			}
+		}
+	}
 }
 
 // Size return the current size of the queue using the internal index

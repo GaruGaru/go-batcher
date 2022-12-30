@@ -13,7 +13,7 @@ type Cond struct {
 
 func New() *Cond {
 	return &Cond{
-		c:  make(chan struct{}, 1),
+		c:  make(chan struct{}),
 		cl: &sync.Mutex{},
 	}
 }
@@ -38,6 +38,6 @@ func (c *Cond) Signal() {
 func (c *Cond) Broadcast() {
 	c.cl.Lock()
 	close(c.c)
-	c.c = make(chan struct{}, 0)
+	c.c = make(chan struct{})
 	c.cl.Unlock()
 }
