@@ -99,7 +99,10 @@ func (s *TimeBasedEmit) Init(ec chan struct{}) {
 	go func() {
 		select {
 		case <-s.ticker.C:
-			s.emitCh <- struct{}{}
+			select {
+			case s.emitCh <- struct{}{}:
+			default:
+			}
 		case <-ctx.Done():
 			return
 		}

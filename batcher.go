@@ -70,9 +70,13 @@ func (b *Batcher[I]) Accumulate(items ...I) {
 	// trigger emission checks after publishing
 	// all checks must be non-blocking
 	if b.allowEmit {
-		b.stats.size = b.batch.Size()
-		b.emitRule.Check(*b.stats)
+		b.emitIfNeeded()
 	}
+}
+
+func (b *Batcher[I]) emitIfNeeded() {
+	b.stats.size = b.batch.Size()
+	b.emitRule.Check(*b.stats)
 }
 
 // Start initialize batcher and launch goroutines, blocks until Terminate is called or a non-recoverable error occurs
@@ -86,16 +90,17 @@ func (b *Batcher[I]) Start(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
-				ctx, cancel := context.WithTimeout(ctx, 1000*time.Millisecond)
+				ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 				b.Emit(ctx)
 				cancel()
 				close(b.batchCh)
 				return nil
 			case <-b.emitRule.Emit():
 				b.allowEmit = false
-				ctx, cancel := context.WithTimeout(ctx, 1000*time.Millisecond)
+				ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 				b.Emit(ctx)
 				cancel()
+				b.emitIfNeeded()
 				b.allowEmit = true
 			}
 		}
